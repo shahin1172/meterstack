@@ -1,16 +1,29 @@
 import logging
-
-from drf_spectacular.utils import OpenApiExample
-from drf_spectacular.utils import OpenApiResponse
-from drf_spectacular.utils import extend_schema
-
+from datetime import date
+from dateutil.relativedelta import relativedelta
+from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework import status
+from rest_framework.filters import SearchFilter
+from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from .serializers import DataRequestSerializer
+from users.permissions import IsTenantAdmin
+from .filters import UsageRecordFilter
+from .pagination import UsageCursorPagination
+from .serializers import (
+    DataRequestSerializer,
+    UsageRecordSerializer,
+    DashboardSummarySerializer,
+    DashboardTrendSerializer,
+)
 from .services import UsageService
+from .services.reporting import ReportingService
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +69,6 @@ class DataAPIView(APIView):
             endpoint_path=serializer.validated_data["endpoint_path"],
         )
 
-
         payload = {
             "temperature": 22,
             "humidity": 65,
@@ -87,21 +99,6 @@ class DataAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-
-from django_filters.rest_framework import DjangoFilterBackend
-
-from drf_spectacular.utils import extend_schema
-
-from rest_framework.filters import SearchFilter
-from rest_framework.generics import ListAPIView
-from rest_framework.permissions import IsAuthenticated
-
-from users.permissions import IsTenantAdmin
-
-from .filters import UsageRecordFilter
-from .pagination import UsageCursorPagination
-from .serializers import UsageRecordSerializer
-from .services import UsageService
 
 
 @extend_schema(
@@ -139,3 +136,75 @@ class UsageListAPIView(ListAPIView):
         return UsageService.get_filtered_usage(
             tenant=self.request.user.tenant,
         )
+
+
+@extend_schema(
+    summary="Dashboard summary",
+    description="Return dashboard summary for the current tenant.",
+    tags=["Dashboard"],
+)
+class DashboardSummaryAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsTenantAdmin,
+    ]
+
+    def get(self, request):
+
+        tenant = request.user.tenant
+
+        current_period = date.today().replace(day=1)
+
+        previous_period = (
+            current_period
+            - relativedelta(months=1)
+        )
+
+        data = {
+            "top_endpoints": (
+                ReportingService.get_top_endpoints(
+                    tenant=tenant,
+                )
+            ),
+            "comparison": (
+                ReportingService.compare_periods(
+                    tenant=tenant,
+                    current_period=current_period,
+                    previous_period=previous_period,
+                )
+            ),
+        }
+
+        serializer = DashboardSummarySerializer(data)
+
+        return Response(serializer.data)
+
+
+@extend_schema(
+    summary="Dashboard trends",
+    description="Return daily usage trends.",
+    tags=["Dashboard"],
+)
+class DashboardTrendsAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsTenantAdmin,
+    ]
+
+    def get(self, request):
+
+        tenant = request.user.tenant
+
+        data = {
+            "trends": (
+                ReportingService.get_daily_usage_trends(
+                    tenant=tenant,
+                )
+            )
+        }
+
+        serializer = DashboardTrendSerializer(data)
+
+        return Response(serializer.data)

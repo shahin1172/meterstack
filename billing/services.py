@@ -1,11 +1,10 @@
 from decimal import Decimal
-
 from django.db import transaction
-
 from usage.models import UsageSummary
-
 from .models import PricingPlan, Invoice, InvoiceLine
-
+import logging
+from decimal import Decimal
+from .models import UsageAlert
 
 class BillingService:
 
@@ -64,3 +63,32 @@ class BillingService:
             )
 
         return invoice
+
+    logger = logging.getLogger(__name__)
+
+    @staticmethod
+    def check_budget_alert(*, invoice):
+
+        try:
+            alert = UsageAlert.objects.get(
+                tenant=invoice.tenant,
+                is_enabled=True,
+            )
+
+        except UsageAlert.DoesNotExist:
+            return
+
+        threshold_amount = (
+                alert.monthly_budget *
+                Decimal(alert.threshold_percent) /
+                Decimal("100")
+        )
+
+        if invoice.total >= threshold_amount:
+            logger.warning(
+                "Budget alert | tenant=%s invoice_total=%s budget=%s threshold=%s%%",
+                invoice.tenant.slug,
+                invoice.total,
+                alert.monthly_budget,
+                alert.threshold_percent,
+            )
