@@ -1,0 +1,7 @@
+django
+djangorestframework
+djangorestframework-simplejwt
+django-filter
+drf-spectacular
+psycopg2-binary
+python-dateutil

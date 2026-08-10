@@ -1,40 +1,45 @@
 import logging
+from typing import Any
 from rest_framework import status
+from rest_framework.request import Request
+from rest_framework.response import Response
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 logger = logging.getLogger(__name__)
 
+
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
-    def get_token(cls, user):
+    def get_token(cls, user: Any) -> Any:
         token = super().get_token(user)
-        # Add custom claims
-        token['tenant_slug'] = user.tenant.slug   # assumes user has a FK to Tenant with slug
-        token['role'] = user.role                  # user.role (admin or member)
+        token['tenant_slug'] = user.tenant.slug
+        token['role'] = user.role
         return token
 
-class LoggingTokenObtainPairView(TokenObtainPairView):
-    serializer_class = CustomTokenObtainPairSerializer   # important! hook our serializer
 
-    def post(self, request, *args, **kwargs):
+class LoggingTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
+    def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         username = request.data.get('username', 'unknown')
         try:
             response = super().post(request, *args, **kwargs)
             if response.status_code == status.HTTP_200_OK:
-                logger.info(f"Login successful for user: {username}")
+                logger.info("Login successful for user: %s", username)
             return response
-        except Exception as e:
-            logger.warning(f"Failed login attempt for user '{username}': {str(e)}")
+        except Exception as exc:
+            logger.warning("Failed login attempt for user '%s': %s", username, exc)
             raise
 
+
 class LoggingTokenRefreshView(TokenRefreshView):
-    def post(self, request, *args, **kwargs):
+    def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         try:
             response = super().post(request, *args, **kwargs)
             if response.status_code == status.HTTP_200_OK:
                 logger.info("Token refreshed successfully.")
             return response
-        except Exception as e:
-            logger.warning(f"Token refresh failed: {str(e)}")
+        except Exception as exc:
+            logger.warning("Token refresh failed: %s", exc)
             raise

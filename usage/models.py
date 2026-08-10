@@ -5,7 +5,8 @@ from .managers import (
     UsageRecordManager,
     UsageSummaryManager,
 )
-
+from decimal import Decimal
+from django.core.validators import MinValueValidator
 
 class Endpoint(models.Model):
     tenant = models.ForeignKey(
@@ -20,15 +21,17 @@ class Endpoint(models.Model):
     path = models.CharField(max_length=500)
 
     price_per_call = models.DecimalField(
-        max_digits=12,
-        decimal_places=8,
+        max_digits=14,
+        decimal_places=6,
         default=0,
+        validators=[MinValueValidator(Decimal("0.00"))],
     )
 
     price_per_kb = models.DecimalField(
-        max_digits=12,
-        decimal_places=8,
+        max_digits=14,
+        decimal_places=6,
         default=0,
+        validators=[MinValueValidator(Decimal("0.00"))],
     )
 
     is_active = models.BooleanField(default=True)
@@ -42,6 +45,10 @@ class Endpoint(models.Model):
             models.UniqueConstraint(
                 fields=["tenant", "path"],
                 name="unique_endpoint_per_tenant",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(price_per_call__gte=0) & models.Q(price_per_kb__gte=0),
+                name="endpoint_prices_non_negative",
             ),
         ]
 
@@ -106,6 +113,17 @@ class UsageRecord(models.Model):
             models.Index(fields=["tenant", "timestamp", "endpoint"]),
         ]
 
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(calls__gte=0)
+                    & models.Q(data_bytes__gte=0)
+                    & models.Q(cost__gte=0)
+                ),
+                name="usage_record_positive_fields",
+            ),
+        ]
+
         ordering = ["-timestamp"]
 
     def __str__(self):
@@ -115,7 +133,6 @@ class UsageRecord(models.Model):
             f"{self.endpoint} | "
             f"{self.timestamp}"
         )
-
 
 class UsageSummary(models.Model):
     tenant = models.ForeignKey(
@@ -154,6 +171,15 @@ class UsageSummary(models.Model):
                     "period",
                 ],
                 name="unique_usage_summary_per_period",
+            ),
+            # NEW: non‑negative guard
+            models.CheckConstraint(
+                condition=(
+                    models.Q(total_calls__gte=0)
+                    & models.Q(total_bytes__gte=0)
+                    & models.Q(total_cost__gte=0)
+                ),
+                name="usage_summary_positive_fields",
             ),
         ]
 

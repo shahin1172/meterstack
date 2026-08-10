@@ -37,8 +37,7 @@ class InvoiceListView(ListAPIView):
     def get_queryset(self):
         return (
             Invoice.objects
-            .filter(
-                tenant=self.request.user.tenant,
-            )
+            .filter(tenant=self.request.user.tenant)
+            .prefetch_related('lines')
             .order_by("-period")
         )

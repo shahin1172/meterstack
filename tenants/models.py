@@ -13,7 +13,7 @@ class Tenant(models.Model):
     def save(self,*args,**kwargs):
         if not self.api_key:
             self.api_key=secrets.token_urlsafe(48)
-            super().save(*args, **kwargs)
+        super().save(*args, **kwargs)
 
 
     def __str__(self):

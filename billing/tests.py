@@ -61,22 +61,33 @@ class BillingServiceTests(TestCase):
 
 class BillingCommandTests(TestCase):
 
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Acme")
+        self.endpoint = Endpoint.objects.create(
+            tenant=self.tenant,
+            name="Weather API",
+            path="/weather/",
+            price_per_call=Decimal("0.05"),
+        )
+        PricingPlan.objects.create(
+            tenant=self.tenant,
+            flat_monthly_fee=Decimal("10.00"),
+            discount_percent=Decimal("10.00"),
+        )
+        UsageSummary.objects.create(
+            tenant=self.tenant,
+            endpoint=self.endpoint,
+            period=date(2026, 3, 1),
+            total_calls=100,
+            total_cost=Decimal("50.00"),
+        )
+
     def test_command_does_not_create_duplicate_invoice(self):
+        call_command("generate_invoices", period="2026-03-01")
+        call_command("generate_invoices", period="2026-03-01")
 
-        call_command(
-            "generate_invoices",
-            period="2026-03-01",
-        )
+        self.assertEqual(Invoice.objects.count(), 1)
 
-        call_command(
-            "generate_invoices",
-            period="2026-03-01",
-        )
-
-        self.assertEqual(
-            Invoice.objects.count(),
-            1,
-        )
 
 
 

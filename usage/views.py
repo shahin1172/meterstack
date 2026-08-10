@@ -1,5 +1,6 @@
 import logging
 from datetime import date
+
 from dateutil.relativedelta import relativedelta
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import (
@@ -13,6 +14,7 @@ from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
 from users.permissions import IsTenantAdmin
 from .filters import UsageRecordFilter
 from .pagination import UsageCursorPagination
@@ -22,7 +24,7 @@ from .serializers import (
     DashboardSummarySerializer,
     DashboardTrendSerializer,
 )
-from .services import UsageService
+from .services.usage import UsageService          # adjust if your package layout differs
 from .services.reporting import ReportingService
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,6 @@ class DataAPIView(APIView):
     Public endpoint that tenants call to receive data.
     Every successful request is automatically metered.
     """
-
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
@@ -51,16 +52,13 @@ class DataAPIView(APIView):
         examples=[
             OpenApiExample(
                 "Example Request",
-                value={
-                    "endpoint_path": "/weather/",
-                },
+                value={"endpoint_path": "/weather/"},
                 request_only=True,
             )
         ],
         tags=["Usage"],
     )
     def post(self, request):
-
         serializer = DataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -75,7 +73,8 @@ class DataAPIView(APIView):
             "status": "Sunny",
         }
 
-        data_bytes = len(str(payload).encode("utf-8"))
+        # Business rule moved to service layer
+        data_bytes = UsageService.get_data_size(payload)
 
         UsageService.record_usage(
             tenant=request.user.tenant,
@@ -84,6 +83,9 @@ class DataAPIView(APIView):
             calls=1,
             data_bytes=data_bytes,
         )
+
+        # Dashboard data changed – clear relevant caches
+        ReportingService.invalidate_dashboard_cache(tenant=request.user.tenant)
 
         logger.info(
             "Data served | tenant=%s endpoint=%s user=%s",
@@ -107,35 +109,16 @@ class DataAPIView(APIView):
     tags=["Usage"],
 )
 class UsageListAPIView(ListAPIView):
-
     serializer_class = UsageRecordSerializer
-
-    permission_classes = [
-        IsAuthenticated,
-        IsTenantAdmin,
-    ]
-
+    permission_classes = [IsAuthenticated, IsTenantAdmin]
     pagination_class = UsageCursorPagination
-
-    filter_backends = [
-        DjangoFilterBackend,
-        SearchFilter,
-    ]
-
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = UsageRecordFilter
-
-    search_fields = [
-        "user__email",
-    ]
-
-    ordering = [
-        "-timestamp",
-    ]
+    search_fields = ["user__email"]
+    ordering = ["-timestamp"]
 
     def get_queryset(self):
-        return UsageService.get_filtered_usage(
-            tenant=self.request.user.tenant,
-        )
+        return UsageService.get_filtered_usage(tenant=self.request.user.tenant)
 
 
 @extend_schema(
@@ -144,40 +127,22 @@ class UsageListAPIView(ListAPIView):
     tags=["Dashboard"],
 )
 class DashboardSummaryAPIView(APIView):
-
-    permission_classes = [
-        IsAuthenticated,
-        IsTenantAdmin,
-    ]
+    permission_classes = [IsAuthenticated, IsTenantAdmin]
 
     def get(self, request):
-
         tenant = request.user.tenant
-
         current_period = date.today().replace(day=1)
-
-        previous_period = (
-            current_period
-            - relativedelta(months=1)
-        )
+        previous_period = current_period - relativedelta(months=1)
 
         data = {
-            "top_endpoints": (
-                ReportingService.get_top_endpoints(
-                    tenant=tenant,
-                )
-            ),
-            "comparison": (
-                ReportingService.compare_periods(
-                    tenant=tenant,
-                    current_period=current_period,
-                    previous_period=previous_period,
-                )
+            "top_endpoints": ReportingService.get_top_endpoints(tenant=tenant),
+            "comparison": ReportingService.compare_periods(
+                tenant=tenant,
+                current_period=current_period,
+                previous_period=previous_period,
             ),
         }
-
         serializer = DashboardSummarySerializer(data)
-
         return Response(serializer.data)
 
 
@@ -187,24 +152,12 @@ class DashboardSummaryAPIView(APIView):
     tags=["Dashboard"],
 )
 class DashboardTrendsAPIView(APIView):
-
-    permission_classes = [
-        IsAuthenticated,
-        IsTenantAdmin,
-    ]
+    permission_classes = [IsAuthenticated, IsTenantAdmin]
 
     def get(self, request):
-
         tenant = request.user.tenant
-
         data = {
-            "trends": (
-                ReportingService.get_daily_usage_trends(
-                    tenant=tenant,
-                )
-            )
+            "trends": ReportingService.get_daily_usage_trends(tenant=tenant)
         }
-
         serializer = DashboardTrendSerializer(data)
-
         return Response(serializer.data)

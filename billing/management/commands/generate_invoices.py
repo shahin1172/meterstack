@@ -1,9 +1,9 @@
 import logging
 from datetime import date
 from django.core.management.base import BaseCommand
-from ....tenants.models import Tenant
-from ....billing.services import BillingService
-from ....billing.models import PricingPlan, Invoice, InvoiceLine, UsageAlert
+from tenants.models import Tenant
+from billing.services import BillingService
+from billing.models import PricingPlan, Invoice, InvoiceLine, UsageAlert
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,8 @@ class Command(BaseCommand):
         )
 
         tenants = Tenant.objects.filter(is_active=True)
-        print(tenants.explain())
+
+
 
         for tenant in tenants:
             try:

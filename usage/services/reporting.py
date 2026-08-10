@@ -6,6 +6,8 @@ from typing import Any, Callable
 from django.core.cache import cache
 from tenants.models import Tenant
 from usage.models import UsageRecord, UsageSummary
+from datetime import date
+from dateutil.relativedelta import relativedelta
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,48 @@ class ReportingService:
         )
 
         return result
+
+    @classmethod
+    def invalidate_dashboard_cache(
+        cls,
+        tenant: Tenant,
+    ) -> None:
+        """
+        Remove all cached dashboard data for a tenant.
+
+        Called whenever usage data changes so the next dashboard
+        request is rebuilt from the database.
+        """
+
+        current_period = date.today().replace(day=1)
+        previous_period = current_period - relativedelta(months=1)
+
+        keys = [
+            (
+                f"{cls.CACHE_PREFIX}:"
+                f"top_endpoints:"
+                f"{tenant.slug}:5"
+            ),
+            (
+                f"{cls.CACHE_PREFIX}:"
+                f"daily_trends:"
+                f"{tenant.slug}:30"
+            ),
+            (
+                f"{cls.CACHE_PREFIX}:"
+                f"compare_periods:"
+                f"{tenant.slug}:"
+                f"{current_period}:"
+                f"{previous_period}"
+            ),
+        ]
+
+        cache.delete_many(keys)
+
+        logger.info(
+            "Dashboard cache invalidated | tenant=%s",
+            tenant.slug,
+        )
 
     @classmethod
     def get_top_endpoints(

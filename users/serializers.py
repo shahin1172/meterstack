@@ -5,4 +5,4 @@ class Userregistrationserializer(serializers.ModelSerializer):
 
     class Meta():
         model=models.User
-        fields=['__all__']
+        fields='__all__'

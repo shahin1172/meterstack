@@ -9,7 +9,7 @@ class User(AbstractUser):
         admin='admin','admin'
         member='member','member'
     tenant=models.ForeignKey(Tenant,on_delete=models.CASCADE,related_name='users')
-    role=models.CharField(choices=Role.choices,default=Role.member)
+    role=models.CharField(max_length=20,choices=Role.choices,default=Role.member)
 
 
     def __str__(self):

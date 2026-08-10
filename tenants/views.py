@@ -1,9 +1,12 @@
 import logging
 from rest_framework import generics, status
 from rest_framework.response import Response
+
+from tenants.models import Tenant
 from tenants.serializers import TenantRegistrationSerializer
 
 logger = logging.getLogger(__name__)
+
 
 class TenantRegistrationView(generics.CreateAPIView):
     queryset = Tenant.objects.all()
@@ -13,15 +16,23 @@ class TenantRegistrationView(generics.CreateAPIView):
         try:
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)          # <-- perform_create called here
-            tenant_slug = serializer.validated_data.get('slug')
-            logger.info(f"Tenant registered successfully: slug={tenant_slug}")
-            headers = self.get_success_headers(serializer.data) #exactly where to find the new tenant
+            tenant = serializer.save()
+
+            logger.info("Tenant registered successfully: slug=%s", tenant.slug)
+
+            headers = self.get_success_headers(serializer.data)
+
             return Response(
-                {"message": "Tenant and admin user created successfully."},
+                {
+                    "message": "Tenant and admin user created successfully.",
+                    "tenant": {
+                        "name": tenant.name,
+                        "slug": tenant.slug,
+                    },
+                },
                 status=status.HTTP_201_CREATED,
-                headers=headers
+                headers=headers,
             )
         except Exception as e:
-            logger.warning(f"Tenant registration failed: {str(e)}")
+            logger.warning("Tenant registration failed: %s", str(e))
             raise

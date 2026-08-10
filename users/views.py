@@ -6,12 +6,11 @@ from rest_framework.response import Response
 from .serializers import Userregistrationserializer
 from .models import User
 
-class Tokenobtainview(TokenObtainPairView):
-    serializer=token.TokenObtainPairSerializer()
+
 
 class Userregistrationview(generics.GenericAPIView):
     queryset=User.objects.all()
-    serializer_class=Userregistrationserializer()
+    serializer_class=Userregistrationserializer
 
 
 
