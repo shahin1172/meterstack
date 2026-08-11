@@ -14,4 +14,5 @@ urlpatterns = [
     path('api/v1/', include('tenants.urls')),
     path('api/v1/', include('usage.urls')),
     path('api/v1/', include('billing.urls')),
+    path('api/health/', HealthCheckView.as_view(), name='health-check'),
 ]
