@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from core.views import HealthCheckView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -16,3 +17,7 @@ urlpatterns = [
     path('api/v1/', include('billing.urls')),
     path('api/health/', HealthCheckView.as_view(), name='health-check'),
 ]
+
+
+
+

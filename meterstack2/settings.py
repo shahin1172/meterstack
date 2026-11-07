@@ -16,13 +16,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # -----------------------------------------------------------------------------
 
 # *** CRITICAL: no fallback – missing env var will crash startup ***
-SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "fallback-dev-secret-key")
 
 # *** DEBUG off by default for production safety ***
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
 # *** Read allowed hosts from environment, default to localhost ***
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost").split(",")
+
+ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
 
 # -----------------------------------------------------------------------------
 # Applications
@@ -56,13 +57,14 @@ INSTALLED_APPS = [
 # -----------------------------------------------------------------------------
 
 MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'core.middleware.RequestIDMiddleware',
 ]
 
 ROOT_URLCONF = "meterstack2.urls"
@@ -92,16 +94,25 @@ WSGI_APPLICATION = "meterstack2.wsgi.application"
 # Database
 # -----------------------------------------------------------------------------
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB", "meterstack_db"),
-        "USER": os.getenv("POSTGRES_USER", "meterstack_user"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "change_me"),
-        "HOST": os.getenv("POSTGRES_HOST", "db"),
-        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+pg_db = os.environ.get('POSTGRES_DB')
+if pg_db:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': pg_db,
+            'USER': os.environ.get('POSTGRES_USER', 'meterstack_user'),
+            'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'change_me'),
+            'HOST': os.environ.get('POSTGRES_HOST', 'db'),
+            'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 # -----------------------------------------------------------------------------
 # Authentication
@@ -185,16 +196,29 @@ CACHES = {
 # -----------------------------------------------------------------------------
 
 LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'json': {
+            '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+            'fmt': '%(asctime)s %(levelname)s %(name)s %(message)s',
         },
     },
-    "root": {
-        "handlers": ["console"],
-        "level": "INFO",
+    'filters': {
+        'request_id': {
+            '()': 'core.middleware.RequestIDFilter',   # we'll create this filter next
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'json',
+            'filters': ['request_id'],
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
     },
 }
 
