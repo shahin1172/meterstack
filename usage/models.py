@@ -7,6 +7,7 @@ from .managers import (
 )
 from decimal import Decimal
 from django.core.validators import MinValueValidator
+from .managers import UsageSummaryManager
 
 class Endpoint(models.Model):
     tenant = models.ForeignKey(

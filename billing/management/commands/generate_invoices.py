@@ -2,8 +2,7 @@ import logging
 from datetime import date
 from django.core.management.base import BaseCommand
 from tenants.models import Tenant
-from billing.services import BillingService
-from billing.models import PricingPlan, Invoice, InvoiceLine, UsageAlert
+from billing.tasks import generate_invoice_task      # ← import the TASK
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,6 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-
         period = (
             date.fromisoformat(options["period"])
             if options["period"]
@@ -28,39 +26,13 @@ class Command(BaseCommand):
 
         tenants = Tenant.objects.filter(is_active=True)
 
-
-
         for tenant in tenants:
-            try:
-                invoice=BillingService.generate_invoice(
-                    tenant=tenant,
-                    period=period,
-                )
-                BillingService.check_budget_alert(
-                    invoice=invoice,
-                )
+            generate_invoice_task.delay(tenant.id, period.isoformat())
+            #                     ↑
+            #                     send to worker, don't wait
 
-
-                logger.info(
-                    "Invoice generated for tenant '%s'",
-                    tenant.slug,
-                )
-
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"✓ {tenant.slug}"
-                    )
-                )
-
-            except Exception as exc:
-
-                logger.exception(
-                    "Billing failed for tenant '%s'",
-                    tenant.slug,
-                )
-
-                self.stdout.write(
-                    self.style.ERROR(
-                        f"✗ {tenant.slug}: {exc}"
-                    )
-                )
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"✓ Queued {tenants.count()} invoices for {period}"
+            )
+        )

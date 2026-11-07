@@ -121,3 +121,11 @@ class UsageAlert(models.Model):
 
     def __str__(self):
         return f"{self.tenant.slug} Budget Alert"
+
+
+class SentNotification(models.Model):
+    key = models.CharField(max_length=200, unique=True)
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.key

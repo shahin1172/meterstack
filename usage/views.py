@@ -1,31 +1,31 @@
 import logging
 from datetime import date
-
 from dateutil.relativedelta import relativedelta
+
+from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import (
-    OpenApiExample,
-    OpenApiResponse,
-    extend_schema,
-)
-from rest_framework import status
+
 from rest_framework.filters import SearchFilter
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import status
+
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 
 from users.permissions import IsTenantAdmin
-from .filters import UsageRecordFilter
-from .pagination import UsageCursorPagination
-from .serializers import (
+from usage.serializers import (
     DataRequestSerializer,
     UsageRecordSerializer,
     DashboardSummarySerializer,
     DashboardTrendSerializer,
 )
-from .services.usage import UsageService          # adjust if your package layout differs
-from .services.reporting import ReportingService
+from usage.services.usage import UsageService
+from usage.services.reporting import ReportingService
+from usage.filters import UsageRecordFilter
+from usage.pagination import UsageCursorPagination
+from usage.tasks import invalidate_dashboard_cache_task
 
 logger = logging.getLogger(__name__)
 
@@ -73,19 +73,27 @@ class DataAPIView(APIView):
             "status": "Sunny",
         }
 
-        # Business rule moved to service layer
         data_bytes = UsageService.get_data_size(payload)
 
-        UsageService.record_usage(
-            tenant=request.user.tenant,
-            user=request.user,
-            endpoint=endpoint,
-            calls=1,
-            data_bytes=data_bytes,
-        )
+        # 🟢 START OF THE TRANSACTION 🟢
+        with transaction.atomic():
+            UsageService.record_usage(
+                tenant=request.user.tenant,
+                user=request.user,
+                endpoint=endpoint,
+                calls=1,
+                data_bytes=data_bytes,
+            )
 
-        # Dashboard data changed – clear relevant caches
-        ReportingService.invalidate_dashboard_cache(tenant=request.user.tenant)
+            # 🟢 THE STICKY NOTE:
+            transaction.on_commit(
+                lambda: invalidate_dashboard_cache_task.delay(request.user.tenant.id)
+            )
+
+            # 🚨 UNCOMMENT THE LINE BELOW FOR STATION 5 STEP 3 🚨
+            # raise ValueError("Rollback! Fake API crash!")
+            pass
+        # 🟢 END OF THE TRANSACTION 🟢
 
         logger.info(
             "Data served | tenant=%s endpoint=%s user=%s",
@@ -111,11 +119,9 @@ class DataAPIView(APIView):
 class UsageListAPIView(ListAPIView):
     serializer_class = UsageRecordSerializer
     permission_classes = [IsAuthenticated, IsTenantAdmin]
-    pagination_class = UsageCursorPagination
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_class = UsageRecordFilter
-    search_fields = ["user__email"]
-    ordering = ["-timestamp"]
+    pagination_class = UsageCursorPagination
 
     def get_queryset(self):
         return UsageService.get_filtered_usage(tenant=self.request.user.tenant)
@@ -123,8 +129,8 @@ class UsageListAPIView(ListAPIView):
 
 @extend_schema(
     summary="Dashboard summary",
-    description="Return dashboard summary for the current tenant.",
-    tags=["Dashboard"],
+    description="Top endpoints and current vs previous month comparison.",
+    tags=["Usage"],
 )
 class DashboardSummaryAPIView(APIView):
     permission_classes = [IsAuthenticated, IsTenantAdmin]
@@ -134,30 +140,28 @@ class DashboardSummaryAPIView(APIView):
         current_period = date.today().replace(day=1)
         previous_period = current_period - relativedelta(months=1)
 
-        data = {
-            "top_endpoints": ReportingService.get_top_endpoints(tenant=tenant),
-            "comparison": ReportingService.compare_periods(
-                tenant=tenant,
-                current_period=current_period,
-                previous_period=previous_period,
-            ),
-        }
-        serializer = DashboardSummarySerializer(data)
-        return Response(serializer.data)
+        top_endpoints = ReportingService.get_top_endpoints(tenant=tenant)
+        comparison = ReportingService.compare_periods(
+            tenant=tenant,
+            current_period=current_period,
+            previous_period=previous_period,
+        )
+
+        return Response({
+            "top_endpoints": top_endpoints,
+            "comparison": comparison,
+        })
 
 
 @extend_schema(
     summary="Dashboard trends",
-    description="Return daily usage trends.",
-    tags=["Dashboard"],
+    description="Daily usage trends for the last 30 days.",
+    tags=["Usage"],
 )
 class DashboardTrendsAPIView(APIView):
     permission_classes = [IsAuthenticated, IsTenantAdmin]
 
     def get(self, request):
         tenant = request.user.tenant
-        data = {
-            "trends": ReportingService.get_daily_usage_trends(tenant=tenant)
-        }
-        serializer = DashboardTrendSerializer(data)
-        return Response(serializer.data)
+        trends = ReportingService.get_daily_usage_trends(tenant=tenant, days=30)
+        return Response({"trends": trends})

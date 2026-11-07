@@ -4,6 +4,7 @@ Django settings for meterstack2 project.
 
 from pathlib import Path
 import os
+from celery.schedules import crontab
 
 # -----------------------------------------------------------------------------
 # Paths
@@ -189,6 +190,56 @@ CACHES = {
         "LOCATION": "meterstack-dashboard-cache",
         "TIMEOUT": 300,
     }
+}
+
+# ---------------------------------------------------------------------------
+# Celery
+# ---------------------------------------------------------------------------
+
+CELERY_BROKER_URL = os.environ.get(
+    "CELERY_BROKER_URL",
+    "redis://redis:6379/0",
+)
+CELERY_RESULT_BACKEND = os.environ.get(
+    "CELERY_RESULT_BACKEND",
+    "redis://redis:6379/1",
+)
+
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "UTC"
+
+# Track task STARTED state (needed by Flower to show "running" tasks)
+CELERY_TASK_TRACK_STARTED = True
+
+# Safety limits — every task gets these unless overridden
+CELERY_TASK_TIME_LIMIT = 300          # hard kill at 5 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 240     # soft signal at 4 minutes
+
+# Late acknowledgment — task is only acked after it finishes
+# (safer if worker crashes mid-task)
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+
+CELERY_BEAT_SCHEDULE = {
+    # 1st of every month at 2:00 AM
+    "generate-monthly-invoices": {
+        "task": "billing.tasks.generate_monthly_invoices",
+        "schedule": crontab(day_of_month=1, hour=2, minute=0),
+    },
+
+    # Every night at 2:30 AM
+    "warm-dashboard-caches": {
+        "task": "usage.tasks.warm_all_dashboards",
+        "schedule": crontab(hour=2, minute=30),
+    },
+
+    # Every Sunday at 3:00 AM
+    "cleanup-old-usage": {
+        "task": "core.tasks.cleanup_old_usage",
+        "schedule": crontab(day_of_week=0, hour=3),
+    },
 }
 
 # -----------------------------------------------------------------------------
